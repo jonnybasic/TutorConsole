@@ -1,0 +1,3 @@
+# Exclude the intermediate director
+x64/
+Debug/
