@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <array>
 
 #include "ANSIGameInput.h"
 #include "ANSIGameOutput.h"
@@ -93,6 +94,124 @@ public:
 private:
 	Color m_ForeColor;
 	Color m_BackColor;
+};
+
+class SnakeObject : public StyledObject
+{
+public:
+	SnakeObject()
+		: StyledObject::StyledObject(),
+		m_BoundsChanged(false),
+		m_PositionChanged(false),
+		m_Bounds(),
+		m_Position()
+	{ }
+
+	SnakeObject(Color foreColor, Color backColor)
+		: StyledObject::StyledObject(foreColor, backColor),
+		m_BoundsChanged(false),
+		m_PositionChanged(false),
+		m_Bounds(),
+		m_Position()
+	{ }
+
+	~SnakeObject() { }
+
+	void setBounds(const ANSIBox &box) {
+		m_Bounds = box;
+		m_BoundsChanged = true;
+	}
+	void setBounds(
+		const int16_t &x,
+		const int16_t &y,
+		const int16_t &w,
+		const int16_t &h) {
+		m_Bounds.origin.x = x;
+		m_Bounds.origin.y = y;
+		m_Bounds.size.w = w;
+		m_Bounds.size.h = h;
+		m_BoundsChanged = true;
+	}
+
+	void setStartingPosition(const ANSIPoint &position) {
+		m_Position = position;
+		m_PositionChanged = true;
+	}
+	void setStartingPosition(const int16_t &x, const int16_t &y) {
+		m_Position.x = x;
+		m_Position.y = y;
+		m_PositionChanged = true;
+	}
+
+	void moveUp() {
+		if (m_Position.y > m_Bounds.origin.y)
+		{
+			m_PositionHistory.push_back(m_Position);
+			m_Position.y--;
+			m_PositionChanged = true;
+		}
+	}
+	void moveLeft() {
+		if (m_Position.x > m_Bounds.origin.x)
+		{
+			m_PositionHistory.push_back(m_Position);
+			m_Position.x--;
+			m_PositionChanged = true;
+		}
+	}
+	void moveRight() {
+		if (m_Position.x < (m_Bounds.origin.x + m_Bounds.size.w + 1))
+		{
+			m_PositionHistory.push_back(m_Position);
+			m_Position.x++;
+			m_PositionChanged = true;
+		}
+	}
+	void moveDown() {
+		if (m_Position.y < (m_Bounds.origin.y + m_Bounds.size.h + 1))
+		{
+			m_PositionHistory.push_back(m_Position);
+			m_Position.y++;
+			m_PositionChanged = true;
+		}
+	}
+
+	virtual bool think(double frameTime) {
+		if (m_PositionChanged
+			|| m_BoundsChanged)
+		{
+			if (m_BoundsChanged)
+			{
+				// reset
+				m_PositionHistory.clear();
+			}
+			m_PositionChanged = false;
+			m_BoundsChanged = false;
+			return true;
+		}
+		return false;
+	}
+
+	virtual void draw(ANSIGameOutput *output, double frameTime) {
+		StyledObject::draw(output, frameTime);
+		// draw the position history (tail)
+		for (const auto &p : m_PositionHistory)
+		{
+			output->moveTo(p.x, p.y);
+			output->print(" ");
+		}
+		// draw head
+		output->moveTo(m_Position.x, m_Position.y);
+		output->print("@");
+		output->reset();
+	}
+
+private:
+	bool m_BoundsChanged;
+	bool m_PositionChanged;
+	ANSIBox m_Bounds;
+	ANSIPoint m_Position;
+	vector<ANSIPoint> m_PositionHistory;
 };
 
 class BorderObject : public StyledObject
@@ -275,7 +394,11 @@ public:
 		: GameEngine::GameEngine(new ANSIGameInput(), new ANSIGameOutput()),
 		m_InfoBuffer(),
 		m_DoUpdate(false),
-		m_DoUpdateOutput(false)
+		m_DoUpdateOutput(false),
+		m_ScreenHeight(0),
+		m_ScreenWidth(0),
+		m_Snake(BLACK, WHITE),
+		m_GameBoard(nullptr)
 	{ }
 
 	virtual ~MyGame()
@@ -289,6 +412,11 @@ protected:
 	virtual void updateOutput(IGameOutput *output, double frameTime);
 	virtual void updateWindow(int width, int height);
 
+	static inline int ConvertToIndex(int x, int y, int width)
+	{
+		return (y * width) + x;
+	}
+
 private:
 	bool m_DoUpdate;
 	bool m_DoUpdateOutput;
@@ -298,26 +426,33 @@ private:
 	byte m_LastInput;
 	string m_InfoBuffer;
 	BorderObject m_WindowBorder;
-	SampleGameObject m_MessageBox;
+	//SampleGameObject m_MessageBox;
+	SnakeObject m_Snake;
 	vector<IANSIGameObject *> m_GameObjects;
+	int *m_GameBoard;
 };
 
 bool MyGame::initialize(IGameInput *input, IGameOutput *output)
 {
 	// run at 15Hz
-	setUpdateRate(15.0);
+	setUpdateRate(24.0);
+	auto ansiOutput = static_cast<ANSIGameOutput *>(output);
+	ansiOutput->setIsBuffered(true);
 
 	// Initialize the window border
 	m_WindowBorder.setForeColor(0, 255, 255);
 
 	// Initialize the message box
-	m_MessageBox.setTitle("Hello World!");
-	m_MessageBox.setForeColor(255, 0, 0);
-	m_MessageBox.setPosition(6, 5);
+	//m_MessageBox.setTitle("Hello World!");
+	//m_MessageBox.setForeColor(255, 0, 0);
+	//m_MessageBox.setPosition(6, 5);
+	m_Snake.setStartingPosition(m_ScreenWidth / 2, m_ScreenHeight / 2);
+
 
 	// Add objects to vector
 	m_GameObjects.push_back(&m_WindowBorder);
-	m_GameObjects.push_back(&m_MessageBox);
+	m_GameObjects.push_back(&m_Snake);
+	//m_GameObjects.push_back(&m_MessageBox);
 
 	// Schedule update
 	m_DoUpdate = true;
@@ -331,6 +466,12 @@ void MyGame::shutdown()
 	m_DoUpdateOutput = false;
 
 	m_GameObjects.clear();
+
+	if (m_GameBoard != nullptr)
+	{
+		delete m_GameBoard;
+		m_GameBoard = nullptr;
+	}
 }
 
 void MyGame::update(double frameTime)
@@ -399,19 +540,23 @@ void MyGame::updateInput(const IGameInput *input)
 			{
 			case 'H':
 				ss << "UP_ARROW";
-				m_MessageBox.move(0, -1);
+				//m_MessageBox.move(0, -1);
+				m_Snake.moveUp();
 				break;
 			case 'P':
 				ss << "DOWN_ARROW";
-				m_MessageBox.move(0, 1);
+				//m_MessageBox.move(0, 1);
+				m_Snake.moveDown();
 				break;
 			case 'K':
 				ss << "LEFT_ARROW";
-				m_MessageBox.move(-1, 0);
+				//m_MessageBox.move(-1, 0);
+				m_Snake.moveLeft();
 				break;
 			case 'M':
 				ss << "RIGHT_ARROW";
-				m_MessageBox.move(1, 0);
+				//m_MessageBox.move(1, 0);
+				m_Snake.moveRight();
 				break;
 			case 'G':
 				ss << "HOME";
@@ -484,6 +629,7 @@ void MyGame::updateOutput(IGameOutput *output, double frameTime)
 	ansiOutput->moveTo(3, m_ScreenHeight - 2);
 	ansiOutput->print(m_InfoBuffer.c_str());
 
+	ansiOutput->flush();
 	m_DoUpdateOutput = false;
 }
 
@@ -493,6 +639,19 @@ void MyGame::updateWindow(int width, int height)
 	m_ScreenWidth = width;
 	// Update the border
 	m_WindowBorder.setSize(width, height);
+	m_Snake.setBounds(0, 0, width, height);
+	// Reset the gameboard
+	const auto size = width * height;
+	if (m_GameBoard != nullptr)
+	{
+		delete m_GameBoard;
+		m_GameBoard = nullptr;
+	}
+	m_GameBoard = new int[size];
+	for (auto i = 0; i < size; i++)
+	{
+		m_GameBoard[i] = 0;
+	}
 	m_DoUpdateOutput = true;
 }
 
