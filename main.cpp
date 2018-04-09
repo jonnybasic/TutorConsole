@@ -437,7 +437,7 @@ bool MyGame::initialize(IGameInput *input, IGameOutput *output)
 	// run at 15Hz
 	setUpdateRate(24.0);
 	auto ansiOutput = static_cast<ANSIGameOutput *>(output);
-	ansiOutput->setIsBuffered(true);
+	//ansiOutput->setIsBuffered(true);
 
 	// Initialize the window border
 	m_WindowBorder.setForeColor(0, 255, 255);
@@ -625,11 +625,11 @@ void MyGame::updateOutput(IGameOutput *output, double frameTime)
 	ansiOutput->moveTo(2, m_ScreenHeight - 4);
 	ansiOutput->print("Instructions.");
 	ansiOutput->moveTo(3, m_ScreenHeight - 3);
-	ansiOutput->print("-hit 'q' to exit-");
+	ansiOutput->print("-move with arrow keys; 'q' or 'esc' to exit-");
 	ansiOutput->moveTo(3, m_ScreenHeight - 2);
 	ansiOutput->print(m_InfoBuffer.c_str());
 
-	ansiOutput->flush();
+	//ansiOutput->flush();
 	m_DoUpdateOutput = false;
 }
 
